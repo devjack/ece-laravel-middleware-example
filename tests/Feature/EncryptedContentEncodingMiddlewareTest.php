@@ -31,7 +31,7 @@ class EncryptedContentEncodingMiddlewareTest extends TestCase
         $request = Request::create('/', 'GET');
         // ** intentionally do not se content-encoding header herer **
         
-        $middleware = new EncryptedContentEncodingMiddleware;        
+        $middleware = $this->app->make(EncryptedContentEncodingMiddleware::class);
         $response = $middleware->handle($request, function($r) {return $r;});
 
         $this->assertFalse($response->headers->has('Content-Encoding'));
