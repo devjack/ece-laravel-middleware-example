@@ -5,6 +5,8 @@ namespace App\Http\Middleware;
 use Closure;
 use DevJack\EncryptedContentEncoding\RFC8188;
 use DevJack\EncryptedContentEncoding\EncryptionKeyProviderInterface;
+use Illuminate\Http\Request;
+use Base64Url\Base64Url as b64;
 
 class EncryptedContentEncodingMiddleware
 {
@@ -21,14 +23,14 @@ class EncryptedContentEncodingMiddleware
 
     public function shouldAttemptToRunEceMiddleware($request) {
         // if content encoding is aes128gcm, fail with 400 for decode and 500 for encode
-        $encoding = $this->initialRequest->header('Content-Encoding');
+        $encoding = $request->header('Content-Encoding');
         if(strpos('aes128gcm', $encoding) !== false) {
             $this->shouldErrorOnFailure = true;
             return true;
         }
 
-        $content_type = $this->initialRequest->header('Content-Type');
-        if($content_type === "application/octetd-stream") {
+        $content_type = $request->header('Content-Type');
+        if($content_type === "application/octet-stream") {
             // TODO: Implement config/settings that make this functionality optional.
             // We are making an assumption here, so don't error out.
             $this->shouldErrorOnFailure = false;
@@ -39,16 +41,26 @@ class EncryptedContentEncodingMiddleware
     public function attemptDecodeRequest($request) {
         try {
             $decoded = RFC8188::rfc8188_decode(
-                $encoded, // data to decode
+                b64::decode($request->getContent()),
                 $this->encryptionKeyProvider
             );
-            
+
+            return new Request(
+                $request->query->all(),
+                $request->request->all(),
+                $request->attributes->all(),
+                $request->cookies->all(),
+                $request->files->all(),
+                $request->server->all(),
+                $decoded // set the content on the new request
+            );
         } catch(\Exception $e) {
             if($this->shouldErrorOnFailure) {
                 // Throw an appropriate response
-                
+                throw $e;
             } else {
                 // Passthru without decoding.
+                throw $e;
                 return $this->initialRequest;
             }
         }
@@ -90,9 +102,11 @@ class EncryptedContentEncodingMiddleware
         $this->initialRequest = $request;
 
         // Only run this middleware if the content is encoded
-        // if($this->shouldAttemptToRunEceMiddleware($request)) {
-        //     $request = $this->attemptDecodeRequest($request);
-        // }
+        if($this->shouldAttemptToRunEceMiddleware($request)) {
+            $request = $this->attemptDecodeRequest($request);
+        }
+
+        
         
         $response = $next($request);
 

@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Http\Middleware\EncryptedContentEncodingMiddleware;
+use App\Services\EncryptionKeyLookup;
+use Base64Url\Base64Url as b64;
 use Tests\TestCase;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -18,12 +20,7 @@ class EncryptedContentEncodingMiddlewareTest extends TestCase
         
         // $middleware = new EncryptedContentEncodingMiddleware;
         $middleware = $this->app->make(EncryptedContentEncodingMiddleware::class);
-        
-        $response = $middleware->handle($request, function($r) {return $r;});
-
-        $this->assertTrue($response->headers->has('Content-Encoding'));
-        $this->assertEquals('aes128gcm',$response->headers->get('Content-Encoding'));
-
+        $this->assertTrue($middleware->shouldAttemptToRunEceMiddleware($request));
     }
 
     /** @test */
@@ -31,8 +28,9 @@ class EncryptedContentEncodingMiddlewareTest extends TestCase
         $request = Request::create('/', 'GET');
         // ** intentionally do not se content-encoding header herer **
         
-        $middleware = new EncryptedContentEncodingMiddleware;        
-        $response = $middleware->handle($request, function($r) {return $r;});
+        $middleware = $this->app->make(EncryptedContentEncodingMiddleware::class);
+        $self = $this;
+        $response = $middleware->handle($request, function($r) { return $r; });
 
         $this->assertFalse($response->headers->has('Content-Encoding'));
     }
@@ -49,7 +47,24 @@ class EncryptedContentEncodingMiddlewareTest extends TestCase
 
     /** @test */
     public function canDecryptWithKeyIDInEncodingHeader() {
-        $this->markTestSkipped('To be implemented');
+        $encryptedContent = "uNCkWiNYzKTnBN9ji3-qWAAAABkCYTHOG8chz_gnvgOqdGYovxyjuqRyJFjEDyoF1Fvkj6hQPdPHI51OEUKEpgz3SsLWIqS_uA";
+
+        $request = Request::create('/', 'POST', [], [], [], [], $encryptedContent);
+        $request->headers->set('Content-Encoding', 'aes128gcm');
+        
+        $this->app->bind("DevJack\EncryptedContentEncoding\EncryptionKeyProviderInterface", function() {
+            $lookup = new EncryptionKeyLookup();
+            $lookup->addKey(b64::decode("BO3ZVPxUlnLORbVGMpbT1Q"), 'a1');
+            return $lookup;
+        });
+        $middleware = $this->app->make(EncryptedContentEncodingMiddleware::class);
+        
+        $self = $this;
+        $response = $middleware->handle($request, function($r) use ($self) {
+            // This $next middleware gets executed after the decoding and before the encoding
+            $self->assertEquals("I am the walrus", $r->getContent());
+            return $r;
+        });
     }
 
     /** @test */
