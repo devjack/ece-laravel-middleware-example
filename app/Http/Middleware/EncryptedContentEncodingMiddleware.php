@@ -6,6 +6,7 @@ use Closure;
 use DevJack\EncryptedContentEncoding\RFC8188;
 use DevJack\EncryptedContentEncoding\EncryptionKeyProviderInterface;
 use Illuminate\Http\Request;
+use App\Http\Request as EncryptedRequest;
 use Base64Url\Base64Url as b64;
 
 class EncryptedContentEncodingMiddleware
@@ -68,14 +69,37 @@ class EncryptedContentEncodingMiddleware
         return $request;
     }
 
-    public function attemptEncodeResponse($response, $request = null) {
+    public function attemptEncodeResponse($response, $request = null, $keyid, $rs=256) {
         try {
             /*
             * TODO: If there is already content encoding then append 
             *   aes128gcm encoding as per the order it was applied.
             *   See https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Encoding#Syntax
             */
-            // $response->headers->set('Content-Encoding', "aes128gcm");
+
+            //TODO: Implement different $rs strategies to determine the $rs value.
+            
+            $encryptionKeyProvider = $this->encryptionKeyProvider;
+            $encoded = RFC8188::rfc8188_encode(
+                $response->getContent(), // plaintext
+                $encryptionKeyProvider($keyid), // encryption key
+                $keyid,   // key ID
+                $rs    // record size.
+            );
+
+            $encoded_request = new Request(
+                $request->query->all(),
+                $request->request->all(),
+                $request->attributes->all(),
+                $request->cookies->all(),
+                $request->files->all(),
+                $request->server->all(),
+                b64::encode($encoded) // set the content on the new request
+            );
+
+            $encoded_request->headers->add(['Content-Encoding' => 'aes128gcm']);
+            return $encoded_request;
+
         } catch(\Exception $e) {
             if($this->shouldErrorOnFailure) {
                 // Throw an appropriate response
@@ -87,7 +111,18 @@ class EncryptedContentEncodingMiddleware
         }
 
         return $response;
+    }
 
+    public function determineEncryptionKeyId($request) {
+        if(instance_of(App\Http\Request::class, $request)) {
+            return $request->getEncryptionKeyId();
+        }
+
+        // TODO: default/fallback to the Api-Key header.
+
+        // TODO: default to a system configured encryption key.
+
+        // TODO: unable to decrypt exception.
     }
 
     /**
@@ -105,15 +140,14 @@ class EncryptedContentEncodingMiddleware
         if($this->shouldAttemptToRunEceMiddleware($request)) {
             $request = $this->attemptDecodeRequest($request);
         }
-
-        
         
         $response = $next($request);
 
         $this->initialResponse = $response;
 
         if($this->shouldAttemptToRunEceMiddleware($request)) {
-            $response = $this->attemptEncodeResponse($response, $request);
+            $keyid = $this->determineEncryptionKeyId($request);
+            $response = $this->attemptEncodeResponse($response, $request, $keyid);
         }
 
         return $response;
