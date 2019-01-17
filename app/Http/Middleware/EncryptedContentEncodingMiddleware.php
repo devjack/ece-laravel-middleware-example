@@ -114,11 +114,14 @@ class EncryptedContentEncodingMiddleware
     }
 
     public function determineEncryptionKeyId($request) {
-        if(instance_of(App\Http\Request::class, $request)) {
+        if($request instanceof App\Http\Request) {
             return $request->getEncryptionKeyId();
         }
 
-        // TODO: default/fallback to the Api-Key header.
+        // TODO: make the header name configurable and/or an ordered list of headers for fallbacks
+        if($request->header('Api-Key')) {
+            return $request->header('Api-Key');
+        }
 
         // TODO: default to a system configured encryption key.
 
