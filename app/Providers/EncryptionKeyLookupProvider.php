@@ -30,6 +30,7 @@ class EncryptionKeyLookupProvider extends ServiceProvider
     {
         $this->app->bind("DevJack\EncryptedContentEncoding\EncryptionKeyProviderInterface", function() {
             $lookup = new EncryptionKeyLookup();
+            $lookup->useRequestFallbacks(true);
             $lookup->addKey(b64::decode("BO3ZVPxUlnLORbVGMpbT1Q"), 'a1');
             return $lookup;
         });

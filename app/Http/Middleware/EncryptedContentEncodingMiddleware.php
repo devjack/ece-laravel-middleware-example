@@ -113,20 +113,6 @@ class EncryptedContentEncodingMiddleware
         return $response;
     }
 
-    public function determineEncryptionKeyId($request) {
-        if($request instanceof App\Http\Request) {
-            return $request->getEncryptionKeyId();
-        }
-
-        // TODO: make the header name configurable and/or an ordered list of headers for fallbacks
-        if($request->header('Api-Key')) {
-            return $request->header('Api-Key');
-        }
-
-        // TODO: default to a system configured encryption key.
-
-        // TODO: unable to decrypt exception.
-    }
 
     /**
      * Handle an incoming request.
@@ -138,6 +124,8 @@ class EncryptedContentEncodingMiddleware
     public function handle($request, Closure $next)
     {
         $this->initialRequest = $request;
+        
+        $this->encryptionKeyProvider->setCurrentRequest($request);
 
         // Only run this middleware if the content is encoded
         if($this->shouldAttemptToRunEceMiddleware($request)) {
